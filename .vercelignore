@@ -1,0 +1,6 @@
+.env
+.env.*
+.venv
+.agents
+.git
+data
