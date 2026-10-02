@@ -1,7 +1,9 @@
 import os
 os.environ.update({"DATABASE_URL": "sqlite+aiosqlite://", "TELEGRAM_BOT_TOKEN": "123456:abcdefghijklmnopqrstuvwxyzABCDE", "ARCHIVE_API_KEY": "secret"})
+from sqlalchemy.pool import NullPool
 from fastapi.testclient import TestClient
 from app.config import Settings
+from app.db.session import make_session_factory
 from app.main import create_app
 
 def settings() -> Settings:
@@ -20,3 +22,8 @@ def test_frontend_origin_is_normalized_for_cors() -> None:
         response = client.options("/mini-api/chats", headers={"Origin": "https://hang8s.github.io", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "X-Telegram-Init-Data"})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://hang8s.github.io"
+
+def test_vercel_uses_no_process_local_database_pool(monkeypatch) -> None:
+    monkeypatch.setenv("VERCEL", "1")
+    sessions = make_session_factory("postgresql+asyncpg://user:password@db.example.com/app")
+    assert isinstance(sessions.kw["bind"].pool, NullPool)
