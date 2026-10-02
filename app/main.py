@@ -49,7 +49,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         request.state.request_id = request_id
         started_at = time.perf_counter()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "unhandled_request_exception",
+                request_id=request_id,
+                method=request.method,
+                path=request.url.path,
+                query_parameters=sorted(request.query_params.keys()),
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+            )
+            raise
         if 400 <= response.status_code < 500:
             logger.warning(
                 "http_client_error_response",
