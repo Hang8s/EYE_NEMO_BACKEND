@@ -3,6 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from urllib.parse import urlsplit
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -23,6 +24,16 @@ class Settings(BaseSettings):
     def valid_storage(cls, value: str) -> str:
         if value not in {"none", "local"}: raise ValueError("MEDIA_STORAGE must be none or local")
         return value
+    @field_validator("frontend_origin")
+    @classmethod
+    def normalize_frontend_origin(cls, value: str | None) -> str | None:
+        """CORS compares origins exactly, so remove a Pages path or trailing slash."""
+        if not value:
+            return value
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("FRONTEND_ORIGIN must be an absolute HTTP(S) URL")
+        return f"{parsed.scheme}://{parsed.netloc}"
     def validate_production(self) -> None:
         if self.app_env == "production" and (self.telegram_mode != "webhook" or not self.app_base_url or not self.telegram_webhook_secret): raise ValueError("production requires webhook mode, APP_BASE_URL and TELEGRAM_WEBHOOK_SECRET")
 @lru_cache

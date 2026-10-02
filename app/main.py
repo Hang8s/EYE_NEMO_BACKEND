@@ -41,6 +41,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         await app.state.bot.session.close(); await app.state.sessions.kw["bind"].dispose()
     application = FastAPI(title="Telegram Business Archive", lifespan=lifespan)
+    if config.frontend_origin:
+        application.add_middleware(CORSMiddleware, allow_origins=[config.frontend_origin], allow_credentials=False, allow_methods=["GET"], allow_headers=["X-Telegram-Init-Data", "Content-Type"])
 
     @application.middleware("http")
     async def log_client_errors(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -86,8 +88,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await http_exception_handler(request, error)
 
     application.include_router(api_router); application.include_router(mini_router)
-    if config.frontend_origin:
-        application.add_middleware(CORSMiddleware, allow_origins=[config.frontend_origin], allow_credentials=False, allow_methods=["GET"], allow_headers=["X-Telegram-Init-Data", "Content-Type"])
     @application.get("/health")
     async def health() -> dict[str, str]: return {"status": "ok"}
     @application.get("/health/ready")
