@@ -1,10 +1,13 @@
 import os
 os.environ.update({"DATABASE_URL": "sqlite+aiosqlite://", "TELEGRAM_BOT_TOKEN": "123456:abcdefghijklmnopqrstuvwxyzABCDE", "ARCHIVE_API_KEY": "secret"})
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from sqlalchemy.pool import NullPool
 from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db.session import make_session_factory
 from app.main import create_app, is_transient_database_connect_error
+from app.telegram.handlers.business import archive_message
 
 def settings() -> Settings:
     return Settings(database_url="sqlite+aiosqlite://", telegram_bot_token="123456:abcdefghijklmnopqrstuvwxyzABCDE", archive_api_key="secret")
@@ -37,3 +40,14 @@ def test_transient_database_connect_error_detects_busy_socket() -> None:
 
 def test_transient_database_connect_error_ignores_other_errors() -> None:
     assert not is_transient_database_connect_error(OSError(111, "Connection refused"))
+
+
+async def test_archiving_restores_a_missing_business_connection() -> None:
+    event = SimpleNamespace(business_connection_id="connection-id")
+    connection = object()
+    archive = SimpleNamespace(archive=AsyncMock(side_effect=[None, object()]), connection=AsyncMock())
+    bot = SimpleNamespace(get_business_connection=AsyncMock(return_value=connection))
+    assert await archive_message(event, archive, bot)
+    bot.get_business_connection.assert_awaited_once_with("connection-id")
+    archive.connection.assert_awaited_once_with(connection)
+    assert archive.archive.await_count == 2
