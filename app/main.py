@@ -51,6 +51,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.sessions = make_session_factory(config.database_url); app.state.settings = config; app.state.bot = make_bot(config.telegram_bot_token.get_secret_value()); app.state.dispatcher = make_dispatcher(); app.state.archive = ArchiveService(app.state.sessions, config)
+        if config.telegram_mode == "webhook" and config.app_base_url and config.telegram_webhook_secret:
+            try:
+                await app.state.bot.set_webhook(
+                    f"{config.app_base_url.rstrip('/')}/telegram/webhook",
+                    secret_token=config.telegram_webhook_secret.get_secret_value(),
+                    allowed_updates=["business_connection", "business_message", "edited_business_message", "deleted_business_messages", "message"],
+                )
+                logger.info("telegram_webhook_configured", webhook_url=config.app_base_url)
+            except Exception:
+                logger.exception("telegram_webhook_configuration_failed", webhook_url=config.app_base_url)
         if config.database_url.startswith("sqlite"):
             async with app.state.sessions.kw["bind"].begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
