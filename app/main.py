@@ -12,7 +12,6 @@ from fastapi.responses import JSONResponse
 from typing import AsyncIterator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import structlog
-from urllib.parse import urlsplit
 from aiogram.types import Update
 from app.api.router import router as api_router
 from app.api.mini import router as mini_router
@@ -49,13 +48,6 @@ def validation_summary(error: RequestValidationError) -> list[dict[str, object]]
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings or get_settings(); configure_logging(config.log_level)
-    database_target = urlsplit(config.database_url)
-    logger.info(
-        "database_connection_target",
-        database_scheme=database_target.scheme,
-        database_host=database_target.hostname,
-        database_port=database_target.port,
-    )
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.sessions = make_session_factory(config.database_url); app.state.settings = config; app.state.bot = make_bot(config.telegram_bot_token.get_secret_value()); app.state.dispatcher = make_dispatcher(); app.state.archive = ArchiveService(app.state.sessions, config)
