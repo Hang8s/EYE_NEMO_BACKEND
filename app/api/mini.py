@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,7 +107,10 @@ async def chat_messages(request: Request, chat_id: uuid.UUID, before: str | None
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id.in_([row.id for row in output])))).all() if output else []
         by_message: dict[uuid.UUID, list[dict[str, object]]] = {}
         for item in attachments:
-            by_message.setdefault(item.message_id, []).append({"id": str(item.id), "type": item.type, "file_name": item.file_name, "mime_type": item.mime_type, "file_size": item.file_size, "available": bool(item.local_path)})
+            available = bool(item.local_path) or bool(
+                item.storage_key and request.app.state.settings.media_storage == "blob"
+            )
+            by_message.setdefault(item.message_id, []).append({"id": str(item.id), "type": item.type, "file_name": item.file_name, "mime_type": item.mime_type, "file_size": item.file_size, "available": available})
         return {"items": [{**message_data(row), "attachments": by_message.get(row.id, [])} for row in output], "next_cursor": next_cursor}
 
 
@@ -123,13 +126,31 @@ async def search(request: Request, q: str, limit: int = Query(50, ge=1, le=100),
 
 
 @router.get("/media/{attachment_id}")
-async def media(request: Request, attachment_id: uuid.UUID, user: MiniUser = Depends(current_user)) -> FileResponse:
+async def media(request: Request, attachment_id: uuid.UUID, user: MiniUser = Depends(current_user)) -> Response:
     async with request.app.state.sessions() as db:
         connections = await owned_connection_ids(db, user)
         attachment = await db.scalar(select(Attachment).join(Message).join(Chat).where(Attachment.id == attachment_id, Chat.business_connection_id.in_(connections)))
-        if not attachment or not attachment.local_path:
+        if not attachment:
             raise HTTPException(404, "Media not found")
-        root = Path(request.app.state.settings.media_path).resolve()
+        settings = request.app.state.settings
+        if attachment.storage_key and settings.media_storage == "blob":
+            from vercel.blob import AsyncBlobClient
+            token = settings.blob_read_write_token
+            if not token:
+                raise HTTPException(404, "Media not found")
+            result = await AsyncBlobClient().get(
+                attachment.storage_key, access="private", token=token.get_secret_value()
+            )
+            if not result or result.status_code != 200 or not result.stream:
+                raise HTTPException(404, "Media not found")
+            headers = {"Content-Disposition": result.blob.content_disposition}
+            return StreamingResponse(
+                result.stream, media_type=result.blob.content_type or attachment.mime_type,
+                headers=headers,
+            )
+        if not attachment.local_path:
+            raise HTTPException(404, "Media not found")
+        root = Path(settings.media_path).resolve()
         path = Path(attachment.local_path).resolve()
         if root not in path.parents or not path.is_file():
             raise HTTPException(404, "Media not found")

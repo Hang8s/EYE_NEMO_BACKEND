@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     app_env: str = "development"; app_host: str = "0.0.0.0"; app_port: int = Field(default=8000, validation_alias="PORT")
     database_url: str; telegram_bot_token: SecretStr; telegram_mode: str = "polling"
     telegram_webhook_secret: SecretStr | None = None; app_base_url: str | None = None; archive_api_key: SecretStr
-    media_storage: str = "none"; media_path: Path = Path("/data/media"); log_level: str = "INFO"
+    media_storage: str = "none"; media_path: Path = Path("/data/media"); blob_read_write_token: SecretStr | None = None; log_level: str = "INFO"
     frontend_origin: str | None = None
     mini_app_url: str | None = None
     mini_app_auth_max_age_seconds: int = 3600
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     @field_validator("media_storage")
     @classmethod
     def valid_storage(cls, value: str) -> str:
-        if value not in {"none", "local"}: raise ValueError("MEDIA_STORAGE must be none or local")
+        if value not in {"none", "local", "blob"}: raise ValueError("MEDIA_STORAGE must be none, local or blob")
         return value
     @field_validator("frontend_origin")
     @classmethod
@@ -36,6 +36,8 @@ class Settings(BaseSettings):
         return f"{parsed.scheme}://{parsed.netloc}"
     def validate_production(self) -> None:
         if self.app_env == "production" and (self.telegram_mode != "webhook" or not self.app_base_url or not self.telegram_webhook_secret): raise ValueError("production requires webhook mode, APP_BASE_URL and TELEGRAM_WEBHOOK_SECRET")
+        if self.media_storage == "blob" and not self.blob_read_write_token:
+            raise ValueError("MEDIA_STORAGE=blob requires BLOB_READ_WRITE_TOKEN")
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()  # type: ignore[call-arg]

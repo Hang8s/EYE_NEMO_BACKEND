@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db.session import make_session_factory
 from app.main import create_app, is_transient_database_connect_error
+from app.services.message_archive import ArchiveService
 from app.telegram.handlers.business import archive_message
 
 def settings() -> Settings:
@@ -51,3 +52,27 @@ async def test_archiving_restores_a_missing_business_connection() -> None:
     bot.get_business_connection.assert_awaited_once_with("connection-id")
     archive.connection.assert_awaited_once_with(connection)
     assert archive.archive.await_count == 2
+
+
+async def test_attachment_is_saved_to_private_blob(monkeypatch) -> None:
+    from vercel.blob import AsyncBlobClient
+
+    attachment = SimpleNamespace(
+        id="attachment-id", telegram_file_id="telegram-file", file_name="photo.jpg",
+        mime_type="image/jpeg", file_size=3, storage_key=None,
+    )
+    bot = SimpleNamespace(
+        get_file=AsyncMock(return_value=SimpleNamespace(file_path="photos/source.jpg")),
+        download_file=AsyncMock(side_effect=lambda _path, destination: destination.write(b"jpg")),
+    )
+
+    async def put(_self, *_args, **_kwargs):
+        return SimpleNamespace(url="https://store.private.blob.vercel-storage.com/attachments/photo.jpg")
+
+    monkeypatch.setattr(AsyncBlobClient, "put", put)
+    config = Settings(
+        database_url="sqlite+aiosqlite://", telegram_bot_token="123456:abcdefghijklmnopqrstuvwxyzABCDE",
+        archive_api_key="secret", media_storage="blob", blob_read_write_token="blob-token",
+    )
+    await ArchiveService(None, config)._download_attachment(bot, attachment)
+    assert attachment.storage_key == "https://store.private.blob.vercel-storage.com/attachments/photo.jpg"

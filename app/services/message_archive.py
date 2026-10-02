@@ -1,5 +1,7 @@
 from __future__ import annotations
 from datetime import UTC, datetime
+from io import BytesIO
+from pathlib import PurePath
 from typing import Any
 from aiogram import Bot
 from aiogram.types import BusinessConnection, BusinessMessagesDeleted, Message as TgMessage
@@ -23,16 +25,31 @@ class ArchiveService:
         self.sessions = sessions
         self.settings = settings
     async def _download_attachment(self, bot: Bot, attachment: Attachment) -> None:
-        if not self.settings or self.settings.media_storage != "local": return
-        root = self.settings.media_path.resolve()
-        target = root / str(attachment.id)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        if not self.settings or self.settings.media_storage == "none": return
         try:
             file = await bot.get_file(attachment.telegram_file_id)
             if not file.file_path: return
-            await bot.download_file(file.file_path, destination=target)
-            attachment.local_path = str(target)
-            attachment.storage_key = str(attachment.id)
+            if self.settings.media_storage == "local":
+                root = self.settings.media_path.resolve()
+                target = root / str(attachment.id)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                await bot.download_file(file.file_path, destination=target)
+                attachment.local_path = str(target)
+                attachment.storage_key = str(attachment.id)
+                return
+            content = BytesIO()
+            await bot.download_file(file.file_path, destination=content)
+            from vercel.blob import AsyncBlobClient
+            token = self.settings.blob_read_write_token
+            if not token: return
+            suffix = PurePath(attachment.file_name or file.file_path).suffix
+            uploaded = await AsyncBlobClient().put(
+                f"attachments/{attachment.id}{suffix}", content.getvalue(), access="private",
+                content_type=attachment.mime_type, add_random_suffix=True,
+                multipart=bool(attachment.file_size and attachment.file_size > 4 * 1024 * 1024),
+                token=token.get_secret_value(),
+            )
+            attachment.storage_key = uploaded.url
         except Exception as error:
             import structlog
             structlog.get_logger().warning("telegram.media.download_failed", attachment_id=str(attachment.id), error=str(error))
