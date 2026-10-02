@@ -8,6 +8,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from typing import AsyncIterator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import structlog
@@ -69,18 +70,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 response = await call_next(request)
                 break
             except Exception as error:
-                if is_transient_database_connect_error(error) and attempt < 2:
-                    delay_seconds = 0.2 * (2**attempt)
-                    logger.warning(
-                        "transient_database_connect_error_retry",
+                if is_transient_database_connect_error(error):
+                    if attempt < 2:
+                        delay_seconds = 0.2 * (2**attempt)
+                        logger.warning(
+                            "transient_database_connect_error_retry",
+                            request_id=request_id,
+                            method=request.method,
+                            path=request.url.path,
+                            attempt=attempt + 1,
+                            delay_seconds=delay_seconds,
+                        )
+                        await asyncio.sleep(delay_seconds)
+                        continue
+                    logger.error(
+                        "transient_database_connect_error_exhausted",
                         request_id=request_id,
                         method=request.method,
                         path=request.url.path,
-                        attempt=attempt + 1,
-                        delay_seconds=delay_seconds,
+                        attempts=attempt + 1,
+                        duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+                        exc_info=True,
                     )
-                    await asyncio.sleep(delay_seconds)
-                    continue
+                    return JSONResponse(
+                        {"detail": "Database temporarily unavailable. Please retry shortly."},
+                        status_code=503,
+                        headers={"Retry-After": "2"},
+                    )
                 logger.exception(
                     "unhandled_request_exception",
                     request_id=request_id,
