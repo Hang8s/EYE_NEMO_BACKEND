@@ -37,6 +37,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def webhook(request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)) -> dict[str, bool]:
         expected = config.telegram_webhook_secret.get_secret_value() if config.telegram_webhook_secret else None
         if not expected or x_telegram_bot_api_secret_token != expected: raise HTTPException(403, "Invalid webhook secret")
-        update = Update.model_validate(await request.json()); await request.app.state.dispatcher.feed_update(request.app.state.bot, update, archive=request.app.state.archive, app_url=config.frontend_origin); return {"ok": True}
+        update = Update.model_validate(await request.json()); await request.app.state.dispatcher.feed_update(request.app.state.bot, update, archive=request.app.state.archive, app_url=config.mini_app_url or config.frontend_origin); return {"ok": True}
     return application
 app = create_app()

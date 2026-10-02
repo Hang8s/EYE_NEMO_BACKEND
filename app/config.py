@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     telegram_webhook_secret: SecretStr | None = None; app_base_url: str | None = None; archive_api_key: SecretStr
     media_storage: str = "none"; media_path: Path = Path("/data/media"); log_level: str = "INFO"
     frontend_origin: str | None = None
+    mini_app_url: str | None = None
     mini_app_auth_max_age_seconds: int = 3600
     @field_validator("telegram_mode")
     @classmethod

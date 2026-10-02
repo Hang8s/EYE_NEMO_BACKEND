@@ -6,11 +6,12 @@ from app.telegram.bot import configure_menu_button, make_bot
 
 async def main() -> None:
     settings = get_settings()
-    if not settings.frontend_origin:
-        raise RuntimeError("FRONTEND_ORIGIN is required")
+    app_url = settings.mini_app_url or settings.frontend_origin
+    if not app_url:
+        raise RuntimeError("MINI_APP_URL is required")
     bot = make_bot(settings.telegram_bot_token.get_secret_value())
     try:
-        await configure_menu_button(bot, settings.frontend_origin)
+        await configure_menu_button(bot, app_url)
     finally:
         await bot.session.close()
 

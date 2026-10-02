@@ -15,7 +15,7 @@ Development-only polling is available with `uv run python -m app.telegram.pollin
 
 ## Mini App
 
-The React Mini App lives in the sibling `../frontend` repository. It validates Telegram `initData` on every request and scopes data to the caller's active Business connections. Deploy both services over HTTPS, configure `FRONTEND_ORIGIN`, then run `uv run python -m scripts.configure_mini_app`. Users can also send `/archive` to the bot.
+The React Mini App lives in the sibling `../frontend` repository. It validates Telegram `initData` on every request and scopes data to the caller's active Business connections. Set `FRONTEND_ORIGIN=https://hang8s.github.io` for CORS and `MINI_APP_URL=https://hang8s.github.io/EYE_NEMO_FRONTEND/` for the bot button, then run `uv run python -m scripts.configure_mini_app`. Users can also send `/archive` to the bot.
 
 Required settings are `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, and `ARCHIVE_API_KEY`. Production additionally requires `APP_ENV=production`, `TELEGRAM_MODE=webhook`, `APP_BASE_URL`, and `TELEGRAM_WEBHOOK_SECRET`. `MEDIA_STORAGE` accepts `none` (default) or `local`; attachment metadata is always retained. With `local`, the service downloads supported media to `MEDIA_PATH`; use a persistent volume in production.
 
