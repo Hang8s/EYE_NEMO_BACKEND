@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -141,12 +141,11 @@ async def media(request: Request, attachment_id: uuid.UUID, user: MiniUser = Dep
             result = await AsyncBlobClient().get(
                 attachment.storage_key, access="private", token=token.get_secret_value()
             )
-            if not result or result.status_code != 200 or not result.stream:
+            if not result or result.status_code != 200:
                 raise HTTPException(404, "Media not found")
-            headers = {"Content-Disposition": result.blob.content_disposition}
-            return StreamingResponse(
-                result.stream, media_type=result.blob.content_type or attachment.mime_type,
-                headers=headers,
+            headers = {"Content-Disposition": result.content_disposition}
+            return Response(
+                result.content, media_type=result.content_type or attachment.mime_type, headers=headers
             )
         if not attachment.local_path:
             raise HTTPException(404, "Media not found")
