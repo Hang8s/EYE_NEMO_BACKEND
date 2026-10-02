@@ -17,7 +17,7 @@ Development-only polling is available with `uv run python -m app.telegram.pollin
 
 The React Mini App lives in the sibling `../frontend` repository. It validates Telegram `initData` on every request and scopes data to the caller's active Business connections. Deploy both services over HTTPS, configure `FRONTEND_ORIGIN`, then run `uv run python -m scripts.configure_mini_app`. Users can also send `/archive` to the bot.
 
-Required settings are `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, and `ARCHIVE_API_KEY`. Production additionally requires `APP_ENV=production`, `TELEGRAM_MODE=webhook`, `APP_BASE_URL`, and `TELEGRAM_WEBHOOK_SECRET`. `MEDIA_STORAGE` accepts `none` (default) or `local`; attachment metadata is always retained. Local downloads are intentionally not yet enabled, so use `none` until a storage backend is configured.
+Required settings are `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, and `ARCHIVE_API_KEY`. Production additionally requires `APP_ENV=production`, `TELEGRAM_MODE=webhook`, `APP_BASE_URL`, and `TELEGRAM_WEBHOOK_SECRET`. `MEDIA_STORAGE` accepts `none` (default) or `local`; attachment metadata is always retained. With `local`, the service downloads supported media to `MEDIA_PATH`; use a persistent volume in production.
 
 ## Telegram setup
 
@@ -52,7 +52,9 @@ Search currently uses portable, parameterized PostgreSQL `ILIKE` across text and
 
 ## Railway
 
-Create a Railway project, add PostgreSQL and an app service from this repository. Set `DATABASE_URL` to Railway's PostgreSQL URL plus `+asyncpg` (or use a suitable async URL), the required production values above, deploy, run `uv run alembic upgrade head` in the service shell, then run the webhook setup script from an environment containing the same token/base URL/secret. Railway supplies `PORT`, which the Docker command honors. A 512 MB instance and small PostgreSQL plan are sufficient for a low-volume MVP; increase database disk according to retained media/history.
+Create a Railway project, add PostgreSQL and an app service from this repository. Use [`.env.railway.example`](.env.railway.example) as the backend service's Variables checklist. Replace every placeholder with a real value. Set `DATABASE_URL` to an async PostgreSQL URL beginning with `postgresql+asyncpg://`; `FRONTEND_ORIGIN` for GitHub Pages is `https://hang8s.github.io` (without the repository path). Set `APP_BASE_URL` to the public Railway backend URL. Railway supplies `PORT`, which the Docker command honors; do not set `APP_PORT` there.
+
+After deployment, run `uv run alembic upgrade head`, `uv run python -m scripts.set_webhook`, and `uv run python -m scripts.configure_mini_app` in the backend service environment. In the frontend GitHub repository, set the Actions variable `VITE_API_BASE_URL` to the Railway backend URL and rerun the Pages workflow. A 512 MB instance and small PostgreSQL plan are sufficient for a low-volume MVP; increase database disk according to retained media/history.
 
 ## Validation
 
