@@ -4,7 +4,7 @@ from sqlalchemy.pool import NullPool
 from fastapi.testclient import TestClient
 from app.config import Settings
 from app.db.session import make_session_factory
-from app.main import create_app
+from app.main import create_app, is_transient_database_connect_error
 
 def settings() -> Settings:
     return Settings(database_url="sqlite+aiosqlite://", telegram_bot_token="123456:abcdefghijklmnopqrstuvwxyzABCDE", archive_api_key="secret")
@@ -27,3 +27,13 @@ def test_vercel_uses_no_process_local_database_pool(monkeypatch) -> None:
     monkeypatch.setenv("VERCEL", "1")
     sessions = make_session_factory("postgresql+asyncpg://user:password@db.example.com/app")
     assert isinstance(sessions.kw["bind"].pool, NullPool)
+
+
+def test_transient_database_connect_error_detects_busy_socket() -> None:
+    error = RuntimeError("database connection failed")
+    error.__cause__ = OSError(16, "Device or resource busy")
+    assert is_transient_database_connect_error(error)
+
+
+def test_transient_database_connect_error_ignores_other_errors() -> None:
+    assert not is_transient_database_connect_error(OSError(111, "Connection refused"))

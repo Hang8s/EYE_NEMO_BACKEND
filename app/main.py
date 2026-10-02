@@ -1,5 +1,7 @@
 from __future__ import annotations
+import asyncio
 from contextlib import asynccontextmanager
+import errno
 import time
 import uuid
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -21,6 +23,19 @@ from app.telegram.bot import make_bot, make_dispatcher
 
 
 logger = structlog.get_logger(__name__)
+
+
+def is_transient_database_connect_error(error: BaseException) -> bool:
+    """Recognize the short-lived socket exhaustion seen in Vercel functions."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, OSError) and current.errno in {errno.EBUSY, errno.EAGAIN}:
+            return True
+        next_error = getattr(current, "orig", None) or current.__cause__ or current.__context__
+        current = next_error if isinstance(next_error, BaseException) else None
+    return False
 
 
 def validation_summary(error: RequestValidationError) -> list[dict[str, object]]:
@@ -49,18 +64,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         request.state.request_id = request_id
         started_at = time.perf_counter()
-        try:
-            response = await call_next(request)
-        except Exception:
-            logger.exception(
-                "unhandled_request_exception",
-                request_id=request_id,
-                method=request.method,
-                path=request.url.path,
-                query_parameters=sorted(request.query_params.keys()),
-                duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
-            )
-            raise
+        for attempt in range(3):
+            try:
+                response = await call_next(request)
+                break
+            except Exception as error:
+                if is_transient_database_connect_error(error) and attempt < 2:
+                    delay_seconds = 0.2 * (2**attempt)
+                    logger.warning(
+                        "transient_database_connect_error_retry",
+                        request_id=request_id,
+                        method=request.method,
+                        path=request.url.path,
+                        attempt=attempt + 1,
+                        delay_seconds=delay_seconds,
+                    )
+                    await asyncio.sleep(delay_seconds)
+                    continue
+                logger.exception(
+                    "unhandled_request_exception",
+                    request_id=request_id,
+                    method=request.method,
+                    path=request.url.path,
+                    query_parameters=sorted(request.query_params.keys()),
+                    duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+                )
+                raise
         if 400 <= response.status_code < 500:
             logger.warning(
                 "http_client_error_response",
